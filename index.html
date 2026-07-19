@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ארץ עיר — מולטיפלייר</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', 'Heebo', Arial, sans-serif; background: #0f172a; }
+    #boot { color: #94a3b8; text-align: center; padding-top: 40vh; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">⏳ טוען את המשחק...</div></div>
+
+  <script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useRef } from "https://esm.sh/react@18.3.1";
+import { createRoot } from "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// ============================================================
+// !!! הגדרות FIREBASE — יש להחליף בהגדרות מהפרויקט שלך !!!
+// Firebase Console -> Project Settings -> Your apps -> Config
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyAE3LTxO3E5XTF6QhFd1VQjH4QhstWp5Iw",
+  authDomain: "artz-ir.firebaseapp.com",
+  projectId: "artz-ir",
+  storageBucket: "artz-ir.firebasestorage.app",
+  messagingSenderId: "893588495636",
+  appId: "1:893588495636:web:7e07dda31741e46a373601"
+};
+// ============================================================
+
+const isConfigMissing = firebaseConfig.apiKey === "YOUR_API_KEY";
+
+const app = isConfigMissing ? null : initializeApp(firebaseConfig);
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
+const appId = 'eretz-ir-multiplayer-v1';
+
+// רשימת האותיות האפשריות למשחק
+const HEBREW_LETTERS = ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ", "ק", "ר", "ש", "ת"];
+
+// 8 קטגוריות ברירת מחדל
+const DEFAULT_CATEGORIES = ["ארץ", "עיר", "חי", "צומח", "דומם", "מקצוע", "מאכל", "שם בן/בת"];
+
+// AudioContext יחיד ומשותף (דפדפנים מגבילים את כמות ההקשרים)
+let sharedAudioCtx = null;
+const getAudioCtx = () => {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume();
+  }
+  return sharedAudioCtx;
+};
+
+// אפקטים קוליים מובנים ללא קבצים חיצוניים (Web Audio API)
+const playSound = (type) => {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'tick') {
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    } else if (type === 'alert-tick') {
+      osc.frequency.setValueAtTime(1000, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } else if (type === 'stop') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(350, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(100, ctx.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } else if (type === 'start') {
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.setValueAtTime(554.37, ctx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } else if (type === 'click') {
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      gain.gain.setValueAtTime(0.03, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
+    } else if (type === 'success') {
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+      osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.3); // C6
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    }
+  } catch (e) {
+    // דפדפנים לפעמים חוסמים אודיו עד לאינטראקציה ראשונה של המשתמש
+  }
+};
+
+// מסך שמוצג כאשר הגדרות Firebase עדיין לא הוזנו
+function ConfigMissingScreen() {
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-center items-center p-6" dir="rtl">
+      <div className="max-w-lg bg-slate-800 border border-rose-500/40 rounded-3xl p-8 text-center shadow-2xl">
+        <span className="text-5xl block mb-4">🔧</span>
+        <h1 className="text-2xl font-black text-rose-400 mb-3">חסרות הגדרות Firebase</h1>
+        <p className="text-slate-300 text-sm leading-relaxed">
+          המשחק דורש חיבור לשרת Firebase כדי לאפשר משחק מרובה משתתפים.
+          <br />
+          יש לפתוח את הקובץ <code className="bg-slate-900 px-2 py-0.5 rounded text-purple-300">index.html</code>,
+          לאתר את האזור המסומן <strong>firebaseConfig</strong> בראש הקוד,
+          ולהדביק שם את ההגדרות מהפרויקט שלך ב-Firebase Console.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  // ניהול מצבי משתמש וחיבור
+  const [user, setUser] = useState(null);
+  const [nickname, setNickname] = useState('');
+  const [joinCode, setJoinCode] = useState(''); // שדה הקלדת קוד חדר (נפרד מהחדר הפעיל!)
+  const [roomId, setRoomId] = useState('');
+  const [room, setRoom] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // מצבי המשחק המקומיים
+  const [localAnswers, setLocalAnswers] = useState({});
+  const [timeLeft, setTimeLeft] = useState(90);
+  const [stopTimeLeft, setStopTimeLeft] = useState(10); // טיימר הנעילה של 10 השניות
+  const [copied, setCopied] = useState(false);
+
+  const prevStatusRef = useRef('');
+  const prevStopInitiatedRef = useRef(false);
+  const lastSentProgressRef = useRef(-1); // מניעת כתיבה מיותרת ל-Firestore בכל הקשה
+
+  // 1. אתחול התחברות ל-Firebase
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("שגיאת התחברות לפיירבייס:", err);
+        setError("שגיאה בחיבור לשרת המשחקים. אנא נסה לרענן.");
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setUser(usr);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. האזנה לשינויים בחדר הנוכחי (סנכרון בזמן אמת מול כל השחקנים)
+  useEffect(() => {
+    if (!user || !roomId) return;
+
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRoom(data);
+        setError('');
+
+        // השמעת סאונד בהתאם למעברי מצבים
+        if (soundEnabled) {
+          if (data.status === 'PLAYING' && prevStatusRef.current !== 'PLAYING') {
+            playSound('start');
+          } else if (data.status === 'SCORING' && prevStatusRef.current === 'PLAYING') {
+            playSound('stop');
+          } else if (data.stopInitiated && !prevStopInitiatedRef.current) {
+            playSound('stop');
+          } else if (data.status === 'RESULTS' && prevStatusRef.current === 'SCORING') {
+            playSound('success');
+          }
+        }
+        prevStatusRef.current = data.status;
+        prevStopInitiatedRef.current = !!data.stopInitiated;
+      } else {
+        setError("החדר שחיפשת לא קיים או שנסגר.");
+        setRoom(null);
+        setRoomId('');
+      }
+    }, (err) => {
+      console.error("שגיאה בקבלת עדכונים מהחדר:", err);
+      setError("אירעה שגיאה בסנכרון הנתונים.");
+    });
+
+    return () => unsubscribe();
+  }, [user, roomId, soundEnabled]);
+
+  // 3. ניהול טיימר ראשי של המשחק (90 שניות)
+  useEffect(() => {
+    if (!room || room.status !== 'PLAYING' || room.stopInitiated) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const startedAt = room.roundStartedAt || now;
+      const durationMs = (room.duration || 90) * 1000;
+      const elapsed = now - startedAt;
+      const remaining = Math.max(0, Math.ceil((durationMs - elapsed) / 1000));
+
+      setTimeLeft(remaining);
+
+      // תקתוק אזהרה ב-5 שניות האחרונות של המשחק הכללי
+      if (remaining <= 5 && remaining > 0 && soundEnabled) {
+        playSound('tick');
+      }
+
+      // אם הזמן נגמר, המשחק נכנס אוטומטית לסבב נעילה של 10 שניות
+      if (remaining === 0) {
+        clearInterval(interval);
+        triggerStopSequence("הטיימר");
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [room, room?.stopInitiated, soundEnabled]);
+
+  // 4. ניהול טיימר נעילה של 10 שניות מרגע לחיצת "עצור!"
+  useEffect(() => {
+    if (!room || room.status !== 'PLAYING' || !room.stopInitiated) {
+      setStopTimeLeft(10);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const startedAt = room.stopTimerStartedAt || now;
+      const elapsed = now - startedAt;
+      const remaining = Math.max(0, 10 - Math.floor(elapsed / 1000));
+
+      setStopTimeLeft(remaining);
+
+      // השמעת תקתוק חירום מהיר בכל שנייה של הסטופ
+      if (remaining > 0 && soundEnabled) {
+        playSound('alert-tick');
+      }
+
+      // כשהגענו ל-0 שניות, נועלים את המשחק ומעבירים לשלב הניקוד
+      if (remaining === 0) {
+        clearInterval(interval);
+
+        // העלאה סופית ומיידית של התשובות שלי
+        submitAnswersLocally();
+
+        // רק המארח מעביר רשמית את הסטטוס ל-SCORING כדי למנוע כפילויות כתיבה
+        if (room.hostId === user?.uid) {
+          const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+          updateDoc(roomRef, {
+            status: 'SCORING'
+          }).catch(err => console.error("שגיאה במעבר לשלב הניקוד:", err));
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [room?.stopInitiated, room?.stopTimerStartedAt, room?.status, user, soundEnabled]);
+
+  // 5. מעקב אחר התקדמות ההקלדה שלי ועדכון שאר השחקנים
+  //    (נכתב ל-Firestore רק כשמספר הקטגוריות המלאות משתנה — לא בכל הקשה)
+  useEffect(() => {
+    if (!room || room.status !== 'PLAYING' || !user) return;
+
+    const filledCount = Object.values(localAnswers).filter(val => val.trim().length > 0).length;
+    if (filledCount === lastSentProgressRef.current) return;
+    lastSentProgressRef.current = filledCount;
+
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    updateDoc(roomRef, {
+      [`players.${user.uid}.progress`]: filledCount
+    }).catch(err => console.error(err));
+
+  }, [localAnswers, room?.status, user, roomId]);
+
+  // במעבר סופי לשלב הניקוד, מוודא שהעלינו הכל
+  useEffect(() => {
+    if (room && room.status === 'SCORING' && user) {
+      if (!room.answers?.[user.uid]) {
+        submitAnswersLocally();
+      }
+    }
+  }, [room?.status]);
+
+  // פונקציה להעלאת התשובות שלי למאגר החדר
+  const submitAnswersLocally = async () => {
+    if (!user || !roomId) return;
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    try {
+      await updateDoc(roomRef, {
+        [`answers.${user.uid}`]: localAnswers
+      });
+    } catch (err) {
+      console.error("שגיאה בשמירת תשובות:", err);
+    }
+  };
+
+  // התחלת תהליך עצירה (עדכון הענן שהתחילה ספירה של 10 שניות)
+  const triggerStopSequence = async (presserName) => {
+    if (!room || room.status !== 'PLAYING' || room.stopInitiated) return;
+
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    try {
+      await updateDoc(roomRef, {
+        stopInitiated: true,
+        stopPressedBy: presserName,
+        stopTimerStartedAt: Date.now()
+      });
+    } catch (err) {
+      console.error("שגיאה בהפעלת מנגנון העצירה:", err);
+    }
+  };
+
+  // שינוי כמות הסיבובים בלובי על ידי המארח
+  const handleSetTotalRounds = async (rounds) => {
+    if (!room || room.hostId !== user?.uid) return;
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    try {
+      await updateDoc(roomRef, {
+        totalRounds: Number(rounds)
+      });
+      if (soundEnabled) playSound('click');
+    } catch (err) {
+      console.error("שגיאה בעדכון כמות הסיבובים:", err);
+    }
+  };
+
+  // יצירת חדר משחק חדש
+  const handleCreateRoom = async () => {
+    if (!nickname.trim()) {
+      setError("אנא הזן שם משתתף תקין כדי להתחיל.");
+      return;
+    }
+    if (!user) {
+      setError("החיבור לשרת עדיין לא הושלם. אנא המתן רגע.");
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    const generatedCode = Math.floor(1000 + Math.random() * 9000).toString();
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', generatedCode);
+
+    try {
+      const initialRoomState = {
+        id: generatedCode,
+        hostId: user.uid,
+        status: 'LOBBY',
+        letter: '',
+        letterPool: [...HEBREW_LETTERS],
+        duration: 90,
+        totalRounds: 5, // ברירת מחדל ל-5 סיבובים
+        categories: [...DEFAULT_CATEGORIES],
+        players: {
+          [user.uid]: {
+            uid: user.uid,
+            name: nickname.trim(),
+            score: 0,
+            progress: 0,
+            isHost: true,
+            active: true
+          }
+        },
+        answers: {},
+        vetoes: {},
+        round: 0,
+        createdAt: Date.now(),
+        stopInitiated: false,
+        stopPressedBy: '',
+        stopTimerStartedAt: null
+      };
+
+      await setDoc(roomRef, initialRoomState);
+      setRoomId(generatedCode);
+      setRoom(initialRoomState);
+      setLocalAnswers({});
+      if (soundEnabled) playSound('click');
+    } catch (err) {
+      console.error("שגיאה ביצירת חדר:", err);
+      setError("לא ניתן ליצור חדר משחק כרגע. אנא נסה שוב.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // הצטרפות לחדר משחק קיים
+  const handleJoinRoom = async () => {
+    if (!nickname.trim()) {
+      setError("אנא הזן שם משתתף תקין.");
+      return;
+    }
+    if (!joinCode.trim()) {
+      setError("אנא הזן קוד חדר בן 4 ספרות.");
+      return;
+    }
+    if (!user) {
+      setError("החיבור לשרת עדיין לא הושלם.");
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    const cleanedCode = joinCode.trim();
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', cleanedCode);
+
+    try {
+      const docSnap = await getDoc(roomRef);
+      if (!docSnap.exists()) {
+        setError("קוד חדר לא תקין או שהחדר נסגר.");
+        setLoading(false);
+        return;
+      }
+
+      const roomData = docSnap.data();
+      const currentPlayers = Object.keys(roomData.players || {});
+
+      if (currentPlayers.length >= 10 && !roomData.players[user.uid]) {
+        setError("החדר מלא! המשחק מוגבל לעד 10 שחקנים במקביל.");
+        setLoading(false);
+        return;
+      }
+
+      await updateDoc(roomRef, {
+        [`players.${user.uid}`]: {
+          uid: user.uid,
+          name: nickname.trim(),
+          score: roomData.players?.[user.uid]?.score || 0,
+          progress: 0,
+          isHost: roomData.hostId === user.uid,
+          active: true
+        }
+      });
+
+      setRoomId(cleanedCode);
+      setRoom(roomData);
+      setJoinCode('');
+      setLocalAnswers({});
+      if (soundEnabled) playSound('click');
+    } catch (err) {
+      console.error("שגיאה בהצטרפות לחדר:", err);
+      setError("שגיאה בחיבור לחדר. בדוק את הקוד ונסה שוב.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // מארח המשחק מתחיל סיבוב חדש
+  const handleStartGame = async () => {
+    if (!room || room.hostId !== user.uid) return;
+
+    setLoading(true);
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+    let pool = room.letterPool || [];
+    if (pool.length === 0) {
+      pool = [...HEBREW_LETTERS];
+    }
+
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    const selectedLetter = pool[randomIndex];
+    const newPool = pool.filter((_, idx) => idx !== randomIndex);
+
+    const updatedPlayers = { ...room.players };
+    Object.keys(updatedPlayers).forEach(uid => {
+      updatedPlayers[uid].progress = 0;
+    });
+
+    try {
+      await updateDoc(roomRef, {
+        status: 'PLAYING',
+        letter: selectedLetter,
+        letterPool: newPool,
+        round: (room.round || 0) + 1,
+        roundStartedAt: Date.now(),
+        answers: {},
+        vetoes: {},
+        players: updatedPlayers,
+        stopInitiated: false,
+        stopPressedBy: '',
+        stopTimerStartedAt: null
+      });
+
+      setLocalAnswers({});
+      lastSentProgressRef.current = -1;
+    } catch (err) {
+      console.error("שגיאה בהתחלת המשחק:", err);
+      setError("שגיאה בהתחלת הסיבוב.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // התחלת טורניר חדש מאפס (איפוס ניקוד וסיבובים)
+  const handleResetTournament = async () => {
+    if (!room || room.hostId !== user.uid) return;
+
+    setLoading(true);
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+    const updatedPlayers = { ...room.players };
+    Object.keys(updatedPlayers).forEach(uid => {
+      updatedPlayers[uid].score = 0;
+      updatedPlayers[uid].progress = 0;
+    });
+
+    try {
+      await updateDoc(roomRef, {
+        status: 'LOBBY',
+        round: 0,
+        letter: '',
+        letterPool: [...HEBREW_LETTERS],
+        answers: {},
+        vetoes: {},
+        players: updatedPlayers,
+        stopInitiated: false,
+        stopPressedBy: '',
+        stopTimerStartedAt: null
+      });
+      setLocalAnswers({});
+      lastSentProgressRef.current = -1;
+    } catch (err) {
+      console.error("שגיאה באיפוס המשחק:", err);
+      setError("שגיאה באיפוס המשחק.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // הצבעה/פסילה של תשובות
+  const handleToggleVeto = async (targetUid, category) => {
+    if (!room || !user) return;
+
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    const currentVetoes = room.vetoes || {};
+    const targetVetoes = currentVetoes[targetUid] || {};
+    const categoryVetoes = targetVetoes[category] || {};
+
+    const hasVoted = !!categoryVetoes[user.uid];
+    const updatedCategoryVetoes = { ...categoryVetoes };
+
+    if (hasVoted) {
+      delete updatedCategoryVetoes[user.uid];
+    } else {
+      updatedCategoryVetoes[user.uid] = true;
+    }
+
+    try {
+      await updateDoc(roomRef, {
+        [`vetoes.${targetUid}.${category}`]: updatedCategoryVetoes
+      });
+      if (soundEnabled) playSound('click');
+    } catch (err) {
+      console.error("שגיאה בעדכון הפסילה:", err);
+    }
+  };
+
+  // סיום שלב הבדיקה והניקוד
+  const handleFinishScoring = async () => {
+    if (!room || room.hostId !== user?.uid) return;
+
+    setLoading(true);
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+    try {
+      const finalRoundScores = calculateRoundScores();
+      const updatedPlayers = { ...room.players };
+
+      Object.keys(updatedPlayers).forEach(uid => {
+        const roundPts = finalRoundScores[uid] || 0;
+        updatedPlayers[uid].score = (updatedPlayers[uid].score || 0) + roundPts;
+      });
+
+      await updateDoc(roomRef, {
+        players: updatedPlayers,
+        status: 'RESULTS',
+        lastRoundScores: finalRoundScores
+      });
+
+    } catch (err) {
+      console.error("שגיאה בסיום שלב הניקוד:", err);
+      setError("שגיאה בחישוב הניקוד.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // חישוב ניקוד סיבובי
+  const calculateRoundScores = () => {
+    if (!room) return {};
+    const players = room.players || {};
+    const answers = room.answers || {};
+    const categories = room.categories || [];
+    const letter = room.letter;
+    const vetoes = room.vetoes || {};
+    const playerUids = Object.keys(players);
+    const activeCount = playerUids.length;
+
+    const roundScores = {};
+    playerUids.forEach(uid => { roundScores[uid] = 0; });
+
+    categories.forEach(cat => {
+      const validAnswersMap = {};
+      playerUids.forEach(uid => {
+        const rawAns = (answers[uid]?.[cat] || "").trim();
+
+        const voteCount = Object.keys(vetoes[uid]?.[cat] || {}).length;
+        const requiredVotesToVeto = Math.max(1, Math.ceil((activeCount - 1) / 2));
+        const isVetoed = voteCount >= requiredVotesToVeto;
+
+        const startsWithCorrectLetter = rawAns.length > 0 && rawAns.charAt(0) === letter;
+
+        if (startsWithCorrectLetter && !isVetoed) {
+          validAnswersMap[uid] = rawAns;
+        }
+      });
+
+      playerUids.forEach(uid => {
+        const myAns = validAnswersMap[uid];
+        if (!myAns) return;
+
+        const identicalCount = Object.entries(validAnswersMap).filter(
+          ([otherUid, otherAns]) => otherUid !== uid && otherAns.toLowerCase() === myAns.toLowerCase()
+        ).length;
+
+        if (identicalCount > 0) {
+          roundScores[uid] += 5;
+        } else {
+          const othersWithValidAnswers = Object.keys(validAnswersMap).filter(otherUid => otherUid !== uid).length;
+
+          if (othersWithValidAnswers === 0) {
+            roundScores[uid] += 15;
+          } else {
+            roundScores[uid] += 10;
+          }
+        }
+      });
+    });
+
+    return roundScores;
+  };
+
+  // העתקת קוד חדר
+  const handleCopyCode = () => {
+    const textToCopy = roomId;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(textToCopy).catch(() => {});
+    } else {
+      const dummy = document.createElement("input");
+      document.body.appendChild(dummy);
+      dummy.value = textToCopy;
+      dummy.select();
+      document.execCommand("copy");
+      document.body.removeChild(dummy);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // יציאה מהחדר
+  const handleLeaveRoom = async () => {
+    if (!room || !user) {
+      setRoomId('');
+      setRoom(null);
+      return;
+    }
+
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+    try {
+      const updatedPlayers = { ...room.players };
+      delete updatedPlayers[user.uid];
+
+      if (Object.keys(updatedPlayers).length === 0) {
+        await deleteDoc(roomRef);
+      } else {
+        let newHostId = room.hostId;
+        if (room.hostId === user.uid) {
+          newHostId = Object.keys(updatedPlayers)[0];
+          updatedPlayers[newHostId].isHost = true;
+        }
+        await updateDoc(roomRef, {
+          players: updatedPlayers,
+          hostId: newHostId
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setRoomId('');
+    setRoom(null);
+    setLocalAnswers({});
+  };
+
+  // עזרי חישוב מקומיים
+  const localFilledCount = Object.values(localAnswers).filter(val => val.trim().length > 0).length;
+  const isAllCategoriesFilled = room ? localFilledCount === room.categories.length : false;
+
+  // בדיקה האם הגענו לסוף המשחק (טורניר מלא)
+  const isGameOver = room && room.round >= (room.totalRounds || 5);
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between font-sans selection:bg-purple-500 selection:text-white" dir="rtl">
+
+      {/* סרגל ניווט עליון */}
+      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🌍</span>
+          <div>
+            <h1 className="text-2xl font-black bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">ארץ עיר</h1>
+            <p className="text-xs text-slate-400">משחק מרובה משתתפים אונליין</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`p-2.5 rounded-xl border transition-all ${soundEnabled ? 'bg-slate-700/50 border-purple-500/30 text-purple-400' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
+            title={soundEnabled ? 'השתק צלילים' : 'אפשר צלילים'}
+          >
+            {soundEnabled ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+            )}
+          </button>
+
+          {room && (
+            <button
+              onClick={handleLeaveRoom}
+              className="text-sm px-4 py-2 bg-rose-950/40 hover:bg-rose-900/50 border border-rose-500/30 text-rose-300 rounded-xl transition"
+            >
+              יציאה מהחדר
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* אזור שגיאות והודעות מערכת */}
+      {error && (
+        <div className="mx-6 mt-4 p-4 bg-rose-950/70 border border-rose-500/30 rounded-2xl flex items-center gap-3 text-rose-200 shadow-lg animate-pulse">
+          <span className="text-xl">⚠️</span>
+          <p className="font-semibold text-sm">{error}</p>
+          <button onClick={() => setError('')} className="mr-auto text-rose-400 hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* מרכז המסך */}
+      <main className="flex-grow p-6 flex flex-col justify-center items-center max-w-5xl w-full mx-auto">
+
+        {/* שלב 1: מסך רישום וכניסה */}
+        {!room && (
+          <div className="w-full max-w-md bg-slate-800/80 backdrop-blur-md rounded-3xl p-8 border border-slate-700/80 shadow-2xl flex flex-col gap-6">
+            <div className="text-center">
+              <span className="text-5xl mb-4 block">🐪</span>
+              <h2 className="text-2xl font-black">הצטרפות למשחק מהיר</h2>
+              <p className="text-slate-400 text-sm mt-1">עד 10 שחקנים אונליין בו זמנית</p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block text-slate-300 text-sm font-semibold mb-2">כינוי במשחק</label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={15}
+                  placeholder="הקלד שם..."
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white text-center text-lg font-bold placeholder-slate-500 transition"
+                />
+              </div>
+
+              <div className="h-[1px] bg-slate-700/50 my-2"></div>
+
+              <div>
+                <label className="block text-slate-300 text-sm font-semibold mb-2">קוד חדר קיים (להצטרפות)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    maxLength={4}
+                    placeholder="לדוגמה: 3951"
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white text-center text-xl font-bold tracking-widest placeholder-slate-600 transition"
+                  />
+                  <button
+                    onClick={handleJoinRoom}
+                    disabled={loading}
+                    className="px-6 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white font-bold rounded-xl shadow-lg transition active:scale-95"
+                  >
+                    {loading ? 'מתחבר...' : 'הצטרף'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-center text-xs text-slate-500 my-1">— או —</div>
+
+              <button
+                onClick={handleCreateRoom}
+                disabled={loading}
+                className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-black rounded-xl shadow-xl hover:shadow-purple-500/20 transition active:scale-95 text-lg"
+              >
+                {loading ? 'מכין חדר...' : '➕ צור חדר משחק חדש'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* שלב 2: לובי המתנה */}
+        {room && room.status === 'LOBBY' && (
+          <div className="w-full max-w-2xl bg-slate-800/80 backdrop-blur-md rounded-3xl p-8 border border-slate-700/80 shadow-2xl flex flex-col gap-6">
+            <div className="flex justify-between items-start flex-wrap gap-4">
+              <div>
+                <h2 className="text-2xl font-black flex items-center gap-2">
+                  <span>חדר המתנה</span>
+                  <span className="text-sm px-2.5 py-1 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-full">ממתינים להתחלה</span>
+                </h2>
+                <p className="text-slate-400 text-sm mt-1">ממתינים שהמארח יתחיל את הסיבוב</p>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-700 px-5 py-3 rounded-2xl text-center flex items-center gap-3 relative">
+                <div>
+                  <span className="block text-[10px] text-slate-500 uppercase tracking-wider font-bold">קוד חדר שיתוף</span>
+                  <span className="text-2xl font-black text-purple-400 tracking-wider">{room.id}</span>
+                </div>
+                <button
+                  onClick={handleCopyCode}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600/50 rounded-xl transition text-slate-300"
+                  title="העתק קוד"
+                >
+                  {copied ? '✓ הועתק' : '📋'}
+                </button>
+              </div>
+            </div>
+
+            {/* הגדרת כמות הסיבובים למשחק */}
+            <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-slate-200">כמות הסיבובים בטורניר:</h4>
+                <p className="text-xs text-slate-400">לאחר השלמת הסיבוב האחרון יוכרז המנצח הסופי.</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {room.hostId === user?.uid ? (
+                  <select
+                    value={room.totalRounds || 5}
+                    onChange={(e) => handleSetTotalRounds(e.target.value)}
+                    className="bg-slate-800 border border-slate-600 text-purple-300 font-bold px-4 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition cursor-pointer"
+                  >
+                    <option value="3">3 סיבובים</option>
+                    <option value="5">5 סיבובים (רגיל)</option>
+                    <option value="7">7 סיבובים</option>
+                    <option value="10">10 סיבובים (מרתון)</option>
+                  </select>
+                ) : (
+                  <span className="bg-purple-950/40 text-purple-300 border border-purple-500/30 px-4 py-2 rounded-xl font-bold text-sm">
+                    {room.totalRounds || 5} סיבובים נקבעו
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-700/50 rounded-2xl p-6">
+              <h3 className="text-sm font-bold text-slate-400 mb-4 flex justify-between">
+                <span>שחקנים מחוברים ({Object.keys(room.players || {}).length}/10)</span>
+                <span className="text-xs text-indigo-400">מתעדכן בלייב 🟢</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {Object.values(room.players || {}).map((player) => (
+                  <div
+                    key={player.uid}
+                    className={`flex items-center gap-3 p-3 rounded-xl border ${player.uid === user?.uid ? 'bg-purple-950/20 border-purple-500/50' : 'bg-slate-800/80 border-slate-700'}`}
+                  >
+                    <span className="text-2xl">👤</span>
+                    <div className="flex-grow">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span className="truncate max-w-[130px]">{player.name}</span>
+                        {player.isHost && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-md font-normal">מנהל</span>}
+                        {player.uid === user?.uid && <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded-md font-normal">אתה</span>}
+                      </div>
+                      <span className="text-[11px] text-slate-500">ניקוד מצטבר: {player.score || 0}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-bold text-slate-400 mb-2">הקטגוריות שבמשחק:</h4>
+              <div className="flex flex-wrap gap-2">
+                {room.categories.map((cat, idx) => (
+                  <span key={idx} className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/30 rounded-xl text-xs font-semibold text-slate-300">
+                    {cat}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-2">
+              {room.hostId === user?.uid ? (
+                <button
+                  onClick={handleStartGame}
+                  disabled={loading || Object.keys(room.players || {}).length < 1}
+                  className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-black rounded-xl shadow-xl transition active:scale-95 text-lg"
+                >
+                  {loading ? 'יוצר סיבוב...' : '▶️ התחל סיבוב משחק ראשון!'}
+                </button>
+              ) : (
+                <div className="text-center py-4 bg-slate-900/30 border border-dashed border-slate-700 rounded-xl text-slate-400 text-sm">
+                  ⏱️ ממתינים שמארח המשחק יבחר אות ויתחיל...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* שלב 3: הקלדת תשובות (PLAYING) */}
+        {room && room.status === 'PLAYING' && (
+          <div className="w-full max-w-3xl flex flex-col gap-6">
+
+            {/* באנר חירום אדום מהבהב - מופעל כאשר שחקן לחץ עצור */}
+            {room.stopInitiated && (
+              <div className="bg-rose-600 text-white p-5 rounded-2xl border border-rose-500 shadow-xl text-center animate-pulse flex flex-col sm:flex-row items-center justify-center gap-3">
+                <span className="text-3xl">🚨</span>
+                <div>
+                  <h3 className="text-xl font-black">המשחק נעצר על ידי {room.stopPressedBy}!</h3>
+                  <p className="text-sm text-rose-100">המערכת תינעל אוטומטית ותעבור לבדיקה בעוד:</p>
+                </div>
+                <div className="bg-black/30 border border-white/20 rounded-xl px-5 py-2 font-mono text-4xl font-black">
+                  00:{stopTimeLeft < 10 ? `0${stopTimeLeft}` : stopTimeLeft}
+                </div>
+              </div>
+            )}
+
+            {/* פאנל עליון של המשחק */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* האות */}
+              <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl p-6 border border-purple-500/30 text-center flex flex-col justify-center items-center shadow-lg relative">
+                <span className="text-[10px] text-purple-300 font-bold uppercase tracking-wide">סיבוב {room.round} מתוך {room.totalRounds || 5}</span>
+                <span className="text-6xl font-black text-white mt-1 drop-shadow-[0_4px_12px_rgba(168,85,247,0.5)]">
+                  {room.letter}'
+                </span>
+              </div>
+
+              {/* שעון משחק כללי */}
+              <div className="bg-slate-800/90 rounded-2xl p-6 border border-slate-700 text-center flex flex-col justify-center items-center shadow-lg relative overflow-hidden">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wide">זמן נותר למשחק</span>
+                <span className={`text-5xl font-black mt-2 transition ${timeLeft <= 10 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>
+                  00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
+                </span>
+                <div
+                  className="absolute bottom-0 right-0 h-1.5 bg-indigo-500 transition-all duration-1000"
+                  style={{ width: `${(timeLeft / (room.duration || 90)) * 100}%` }}
+                ></div>
+              </div>
+
+              {/* מד התקדמות השחקנים האחרים בלייב */}
+              <div className="bg-slate-800/90 rounded-2xl p-4 border border-slate-700 shadow-lg flex flex-col justify-center">
+                <span className="text-xs text-slate-400 font-bold mb-2">מצב שחקנים בשטח:</span>
+                <div className="flex flex-col gap-2 max-h-[100px] overflow-y-auto pr-1">
+                  {Object.values(room.players || {}).map((player) => {
+                    const progressVal = player.progress || 0;
+                    const totalCategories = room.categories.length;
+                    const pct = (progressVal / totalCategories) * 100;
+                    return (
+                      <div key={player.uid} className="text-xs flex items-center justify-between gap-2">
+                        <span className="truncate max-w-[80px] font-semibold">{player.name}</span>
+                        <div className="flex-grow bg-slate-900 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-indigo-500 h-full transition-all duration-300"
+                            style={{ width: `${pct}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-slate-400 font-mono">{progressVal}/{totalCategories}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* טופס מילוי קטגוריות */}
+            <div className="bg-slate-800/80 backdrop-blur-md rounded-3xl p-6 border border-slate-700 shadow-2xl flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700 pb-3">
+                <h3 className="text-lg font-black text-slate-200">רשום מילים שמתחילות באות "{room.letter}":</h3>
+                <span className="bg-slate-900 px-3 py-1 rounded-full border border-slate-700 text-xs text-slate-300">
+                  מולאו: {localFilledCount}/{room.categories.length} קטגוריות
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {room.categories.map((cat, idx) => (
+                  <div key={idx} className="bg-slate-900/40 p-3 rounded-2xl border border-slate-700/50 hover:border-slate-700 transition flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-slate-300 flex justify-between px-1">
+                      <span>{cat}</span>
+                      {localAnswers[cat]?.trim() && (
+                        <span className={localAnswers[cat].trim().charAt(0) === room.letter ? 'text-emerald-400 text-xs font-bold' : 'text-rose-500 text-xs'}>
+                          {localAnswers[cat].trim().charAt(0) === room.letter ? '✓ מתחיל ב-' + room.letter : '❌ חייב להתחיל ב-' + room.letter}
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      disabled={room.stopInitiated}
+                      value={localAnswers[cat] || ''}
+                      onChange={(e) => {
+                        setLocalAnswers({
+                          ...localAnswers,
+                          [cat]: e.target.value
+                        });
+                      }}
+                      placeholder={`מילה ב-${cat}...`}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 transition"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* אזור כפתור עצור מותנה במימוש מלא */}
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <button
+                  onClick={() => triggerStopSequence(nickname)}
+                  disabled={!isAllCategoriesFilled || room.stopInitiated}
+                  className={`w-full py-4 text-xl font-black rounded-2xl shadow-xl transition duration-300 ${
+                    !isAllCategoriesFilled
+                      ? 'bg-slate-700/40 text-slate-500 cursor-not-allowed border border-slate-700'
+                      : room.stopInitiated
+                        ? 'bg-rose-900/30 text-rose-500 border border-rose-900'
+                        : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/40 active:scale-[0.98]'
+                  }`}
+                >
+                  🛑 עצור!!! (שלח תשובות והפעל נעילה קבוצתית)
+                </button>
+
+                {/* הערת עזר לכפתור */}
+                {!isAllCategoriesFilled ? (
+                  <p className="text-center text-xs text-amber-400 font-semibold mt-2.5">
+                    הכפתור נעול! עליך להקליד לפחות מילה אחת בכל {room.categories.length} הקטגוריות כדי ללחוץ עצור.
+                  </p>
+                ) : room.stopInitiated ? (
+                  <p className="text-center text-xs text-rose-400 font-semibold mt-2.5">
+                    טיימר הסטופ כבר הופעל, המשחק יינעל בעוד {stopTimeLeft} שניות!
+                  </p>
+                ) : (
+                  <p className="text-center text-xs text-emerald-400 font-semibold mt-2.5">
+                    🎉 מילאת הכל! אתה יכול ללחוץ עצור עכשיו ולנעול את המשחק לחברים!
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* שלב 4: בדיקה, הצבעה וניקוד (SCORING) */}
+        {room && room.status === 'SCORING' && (
+          <div className="w-full max-w-4xl flex flex-col gap-6">
+
+            <div className="bg-slate-800/90 rounded-2xl p-6 border border-slate-700 text-center shadow-lg">
+              <h2 className="text-2xl font-black text-rose-400">⏹️ שלב ההקלדה הסתיים וננעל!</h2>
+              <p className="text-slate-300 text-sm mt-1">
+                בודקים את תשובות סיבוב <strong className="text-purple-300">{room.round}</strong> מתוך <strong className="text-purple-300">{room.totalRounds || 5}</strong>
+              </p>
+              <p className="text-slate-400 text-xs mt-1">
+                למטה מופיעות התשובות של כולם. אם מישהו רשם תשובה שאינה הגיונית או מומצאת, לחצו על <strong>"פסול"</strong>.
+              </p>
+            </div>
+
+            <div className="bg-slate-800/80 rounded-3xl p-6 border border-slate-700 shadow-2xl overflow-x-auto">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <span>בדיקת תשובות עבור האות:</span>
+                <span className="text-2xl font-black text-purple-400">"{room.letter}"</span>
+              </h3>
+
+              <div className="flex flex-col gap-8">
+                {room.categories.map((cat, idx) => {
+                  return (
+                    <div key={idx} className="bg-slate-900/40 rounded-2xl p-4 border border-slate-700/50">
+                      <h4 className="text-md font-bold text-slate-200 border-b border-slate-700 pb-2 mb-3 flex items-center justify-between">
+                        <span className="bg-indigo-900/50 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-xl text-sm">{cat}</span>
+                      </h4>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Object.values(room.players || {}).map((player) => {
+                          const originalAnswer = room.answers?.[player.uid]?.[cat] || "";
+                          const normalizedAnswer = originalAnswer.trim();
+
+                          const correctLetter = normalizedAnswer.length > 0 && normalizedAnswer.charAt(0) === room.letter;
+
+                          const votesAgainst = room.vetoes?.[player.uid]?.[cat] || {};
+                          const voteCount = Object.keys(votesAgainst).length;
+                          const totalActive = Object.keys(room.players).length;
+
+                          const requiredVotes = Math.max(1, Math.ceil((totalActive - 1) / 2));
+                          const isVetoed = voteCount >= requiredVotes;
+
+                          const hasIMyVotedVeto = !!votesAgainst[user?.uid];
+
+                          return (
+                            <div
+                              key={player.uid}
+                              className={`p-3 rounded-xl border flex flex-col justify-between gap-2.5 transition ${
+                                !normalizedAnswer ? 'bg-slate-950/20 border-slate-800 opacity-60' :
+                                isVetoed ? 'bg-rose-950/20 border-rose-900/50' :
+                                !correctLetter ? 'bg-amber-950/10 border-amber-900/40' :
+                                'bg-slate-800/50 border-slate-700'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-300 truncate max-w-[120px]">{player.name}</span>
+                                {player.uid === user?.uid && <span className="text-[10px] text-purple-400">אני</span>}
+                              </div>
+
+                              <div className="text-center py-1">
+                                {normalizedAnswer ? (
+                                  <span className={`text-lg font-bold tracking-wide ${isVetoed ? 'line-through text-rose-500' : !correctLetter ? 'text-amber-500' : 'text-white'}`}>
+                                    {originalAnswer}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600 italic text-sm">לא ענה/ה</span>
+                                )}
+                              </div>
+
+                              {normalizedAnswer && (
+                                <div className="flex justify-between items-center border-t border-slate-700/50 pt-2 text-[11px]">
+                                  {!correctLetter ? (
+                                    <span className="text-rose-400 font-bold">לא מתחיל ב-{room.letter}</span>
+                                  ) : isVetoed ? (
+                                    <span className="text-rose-400 font-bold">פסול קהילתי!</span>
+                                  ) : (
+                                    <span className="text-emerald-400 font-bold">תקין</span>
+                                  )}
+
+                                  {player.uid !== user?.uid && (
+                                    <button
+                                      onClick={() => handleToggleVeto(player.uid, cat)}
+                                      className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition flex items-center gap-1.5 ${
+                                        hasIMyVotedVeto
+                                          ? 'bg-rose-600 border-rose-500 text-white'
+                                          : 'bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300'
+                                      }`}
+                                    >
+                                      <span>👎 פסול</span>
+                                      {voteCount > 0 && <span className="px-1 bg-black/30 rounded text-[10px]">{voteCount}</span>}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {room.hostId === user?.uid ? (
+                <button
+                  onClick={handleFinishScoring}
+                  disabled={loading}
+                  className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xl font-black rounded-2xl shadow-xl transition active:scale-95"
+                >
+                  {loading ? 'מחשב ניקוד...' : '✅ סגור סיבוב וחשב ניקוד!'}
+                </button>
+              ) : (
+                <div className="text-center py-4 bg-slate-800 border border-dashed border-slate-700 rounded-xl text-slate-400 text-sm">
+                  ⏱️ ממתינים שמנהל החדר ינעל את ההצבעות ויחשב את הניקוד...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* שלב 5: לוח תוצאות וסוף המשחק (RESULTS / GAME OVER) */}
+        {room && room.status === 'RESULTS' && (
+          <div className="w-full max-w-2xl bg-slate-800/90 backdrop-blur-md rounded-3xl p-8 border border-slate-700 shadow-2xl flex flex-col gap-6">
+
+            {/* כותרת משתנה בהתאם להאם המשחק הסתיים */}
+            <div className="text-center">
+              {isGameOver ? (
+                <>
+                  <span className="text-6xl animate-bounce block">🏆🎉👑</span>
+                  <h2 className="text-4xl font-black text-amber-400 mt-3 drop-shadow-[0_4px_10px_rgba(245,158,11,0.3)]">סוף הטורניר!</h2>
+                  <p className="text-slate-300 text-md mt-2">
+                    המשחק הושלם בהצלחה לאחר <strong className="text-purple-300">{room.totalRounds} סיבובים</strong>
+                  </p>
+                  <p className="text-emerald-400 text-sm mt-1 font-bold">הכירו את האלופים הסופיים:</p>
+                </>
+              ) : (
+                <>
+                  <span className="text-5xl">📊</span>
+                  <h2 className="text-3xl font-black text-indigo-400 mt-2">תוצאות הסיבוב</h2>
+                  <p className="text-slate-400 text-sm mt-1">סיבוב {room.round} מתוך {room.totalRounds || 5}</p>
+                </>
+              )}
+            </div>
+
+            {/* פודיום לשלושת המקומות הראשונים */}
+            <div className="flex justify-center items-end gap-3 py-6 border-b border-slate-700">
+              {/* מקום 2 */}
+              {Object.values(room.players).sort((a,b) => b.score - a.score)[1] && (
+                <div className="flex flex-col items-center">
+                  <span className="text-sm font-bold text-slate-300 truncate max-w-[80px]">
+                    {Object.values(room.players).sort((a,b) => b.score - a.score)[1].name}
+                  </span>
+                  <span className="text-xs text-slate-400">{(Object.values(room.players).sort((a,b) => b.score - a.score)[1].score)} נק'</span>
+                  <div className="w-16 bg-slate-600 h-24 rounded-t-xl flex items-center justify-center text-xl font-bold shadow-lg mt-1">
+                    🥈
+                  </div>
+                </div>
+              )}
+
+              {/* מקום 1 */}
+              {Object.values(room.players).sort((a,b) => b.score - a.score)[0] && (
+                <div className="flex flex-col items-center scale-110">
+                  <span className="text-sm font-black text-amber-400 truncate max-w-[80px]">
+                    {Object.values(room.players).sort((a,b) => b.score - a.score)[0].name}
+                  </span>
+                  <span className="text-xs text-amber-200 font-bold">{(Object.values(room.players).sort((a,b) => b.score - a.score)[0].score)} נק'</span>
+                  <div className="w-20 bg-gradient-to-b from-amber-500 to-yellow-600 h-32 rounded-t-xl flex items-center justify-center text-3xl font-bold shadow-xl mt-1 relative">
+                    👑
+                    <span className="absolute bottom-2 text-xl">🥇</span>
+                  </div>
+                </div>
+              )}
+
+              {/* מקום 3 */}
+              {Object.values(room.players).sort((a,b) => b.score - a.score)[2] && (
+                <div className="flex flex-col items-center">
+                  <span className="text-sm font-bold text-slate-300 truncate max-w-[80px]">
+                    {Object.values(room.players).sort((a,b) => b.score - a.score)[2].name}
+                  </span>
+                  <span className="text-xs text-slate-400">{(Object.values(room.players).sort((a,b) => b.score - a.score)[2].score)} נק'</span>
+                  <div className="w-16 bg-amber-900 h-16 rounded-t-xl flex items-center justify-center text-xl font-bold shadow-lg mt-1">
+                    🥉
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* טבלה מפורטת של כל השחקנים */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 mb-3">טבלת ניקוד מלאה:</h3>
+              <div className="flex flex-col gap-2">
+                {Object.values(room.players).sort((a, b) => b.score - a.score).map((player, index) => {
+                  const lastRoundPts = room.lastRoundScores?.[player.uid] || 0;
+                  return (
+                    <div
+                      key={player.uid}
+                      className={`flex items-center justify-between p-3 rounded-xl ${player.uid === user?.uid ? 'bg-purple-950/20 border border-purple-500/30' : 'bg-slate-900/50'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-500 font-bold text-sm w-5">{index + 1}.</span>
+                        <span className="font-bold">{player.name}</span>
+                        {player.uid === user?.uid && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-md border border-purple-500/30">אני</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {!isGameOver && <span className="text-xs text-emerald-400 font-semibold">+{lastRoundPts} בסיבוב</span>}
+                        <span className="font-bold text-lg text-slate-100">{player.score || 0} נק'</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ניווט בין סבבים או איפוס משחק */}
+            <div className="mt-4">
+              {isGameOver ? (
+                room.hostId === user?.uid ? (
+                  <button
+                    onClick={handleResetTournament}
+                    disabled={loading}
+                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xl font-black rounded-2xl shadow-xl transition active:scale-95"
+                  >
+                    {loading ? 'מאפס משחק...' : '🎮 התחל משחק חדש! (איפוס ניקוד)'}
+                  </button>
+                ) : (
+                  <div className="text-center py-4 bg-slate-900/30 border border-dashed border-slate-700 rounded-xl text-slate-400 text-sm animate-pulse">
+                    ⏱️ הטורניר הסתיים! המתן שמנהל החדר יתחיל משחק חדש...
+                  </div>
+                )
+              ) : (
+                room.hostId === user?.uid ? (
+                  <button
+                    onClick={handleStartGame}
+                    disabled={loading}
+                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xl font-black rounded-2xl shadow-xl transition active:scale-95"
+                  >
+                    {loading ? 'מכין סיבוב...' : `🔄 סיבוב חדש (אות חדשה!)`}
+                  </button>
+                ) : (
+                  <div className="text-center py-4 bg-slate-900/30 border border-dashed border-slate-700 rounded-xl text-slate-400 text-sm">
+                    ⏱️ ממתינים שהמארח יתחיל את הסיבוב הבא...
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      <footer className="text-center py-4 text-xs text-slate-500 border-t border-slate-800 bg-slate-900/80">
+        ארץ עיר מולטיפלייר • נוצר עם 💜 לחוויית משחק חלקה
+      </footer>
+    </div>
+  );
+}
+
+const root = createRoot(document.getElementById('root'));
+root.render(isConfigMissing ? <ConfigMissingScreen /> : <App />);
+  </script>
+</body>
+</html>
