@@ -363,10 +363,29 @@ function App() {
 
     setLoading(true);
     setError('');
-    const generatedCode = Math.floor(1000 + Math.random() * 9000).toString();
-    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', generatedCode);
 
     try {
+      // מוצאים קוד חדר פנוי כדי לא לדרוס חדר קיים (מניעת התנגשות קודים)
+      let generatedCode = '';
+      let roomRef = null;
+      let attempts = 0;
+      while (attempts < 20) {
+        const candidate = Math.floor(1000 + Math.random() * 9000).toString();
+        const candidateRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', candidate);
+        const existing = await getDoc(candidateRef);
+        if (!existing.exists()) {
+          generatedCode = candidate;
+          roomRef = candidateRef;
+          break;
+        }
+        attempts++;
+      }
+      if (!roomRef) {
+        setError("כל קודי החדרים תפוסים כרגע. אנא נסה שוב בעוד רגע.");
+        setLoading(false);
+        return;
+      }
+
       const initialRoomState = {
         id: generatedCode,
         hostId: user.uid,
@@ -1328,7 +1347,8 @@ function App() {
       </main>
 
       <footer className="text-center py-4 text-xs text-slate-500 border-t border-slate-800 bg-slate-900/80">
-        ארץ עיר מולטיפלייר • נוצר עם 💜 לחוויית משחק חלקה
+        <div>ארץ עיר מולטיפלייר • נוצר עם 💜 לחוויית משחק חלקה</div>
+        <div className="mt-1 text-slate-400">© כל הזכויות שמורות לחיליק בקרמן 2026</div>
       </footer>
     </div>
   );
