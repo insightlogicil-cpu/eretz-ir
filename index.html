@@ -157,6 +157,7 @@ function App() {
   const prevStatusRef = useRef('');
   const prevStopInitiatedRef = useRef(false);
   const lastSentProgressRef = useRef(-1); // מניעת כתיבה מיותרת ל-Firestore בכל הקשה
+  const prevRoundStartedAtRef = useRef(null); // זיהוי תחילת סיבוב חדש לצורך איפוס התאים אצל כל השחקנים
 
   // 1. אתחול התחברות ל-Firebase
   useEffect(() => {
@@ -186,6 +187,13 @@ function App() {
         const data = docSnap.data();
         setRoom(data);
         setError('');
+
+        // איפוס התאים המקומיים בתחילת כל סיבוב חדש — אצל כל השחקנים, לא רק המארח
+        if (data.status === 'PLAYING' && data.roundStartedAt && data.roundStartedAt !== prevRoundStartedAtRef.current) {
+          setLocalAnswers({});
+          lastSentProgressRef.current = -1;
+        }
+        prevRoundStartedAtRef.current = data.roundStartedAt || null;
 
         // השמעת סאונד בהתאם למעברי מצבים
         if (soundEnabled) {
@@ -1044,7 +1052,6 @@ function App() {
                     </label>
                     <input
                       type="text"
-                      disabled={room.stopInitiated}
                       value={localAnswers[cat] || ''}
                       onChange={(e) => {
                         setLocalAnswers({
