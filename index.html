@@ -150,7 +150,7 @@ function App() {
 
   // מצבי המשחק המקומיים
   const [localAnswers, setLocalAnswers] = useState({});
-  const [timeLeft, setTimeLeft] = useState(90);
+  const [timeLeft, setTimeLeft] = useState(300);
   const [stopTimeLeft, setStopTimeLeft] = useState(10); // טיימר הנעילה של 10 השניות
   const [copied, setCopied] = useState(false);
 
@@ -229,7 +229,7 @@ function App() {
     const interval = setInterval(() => {
       const now = Date.now();
       const startedAt = room.roundStartedAt || now;
-      const durationMs = (room.duration || 90) * 1000;
+      const durationMs = (room.duration || 300) * 1000;
       const elapsed = now - startedAt;
       const remaining = Math.max(0, Math.ceil((durationMs - elapsed) / 1000));
 
@@ -400,7 +400,7 @@ function App() {
         status: 'LOBBY',
         letter: '',
         letterPool: [...HEBREW_LETTERS],
-        duration: 90,
+        duration: 300,
         totalRounds: 5, // ברירת מחדל ל-5 סיבובים
         categories: [...DEFAULT_CATEGORIES],
         players: {
@@ -997,11 +997,11 @@ function App() {
               <div className="bg-slate-800/90 rounded-2xl p-6 border border-slate-700 text-center flex flex-col justify-center items-center shadow-lg relative overflow-hidden">
                 <span className="text-xs text-slate-400 font-bold uppercase tracking-wide">זמן נותר למשחק</span>
                 <span className={`text-5xl font-black mt-2 transition ${timeLeft <= 10 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>
-                  00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
+                  {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                 </span>
                 <div
                   className="absolute bottom-0 right-0 h-1.5 bg-indigo-500 transition-all duration-1000"
-                  style={{ width: `${(timeLeft / (room.duration || 90)) * 100}%` }}
+                  style={{ width: `${(timeLeft / (room.duration || 300)) * 100}%` }}
                 ></div>
               </div>
 
