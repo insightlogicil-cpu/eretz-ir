@@ -151,7 +151,7 @@ function App() {
   // מצבי המשחק המקומיים
   const [localAnswers, setLocalAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(300);
-  const [stopTimeLeft, setStopTimeLeft] = useState(10); // טיימר הנעילה של 10 השניות
+  const [stopTimeLeft, setStopTimeLeft] = useState(20); // טיימר הנעילה של 20 השניות
   const [copied, setCopied] = useState(false);
 
   const prevStatusRef = useRef('');
@@ -240,7 +240,7 @@ function App() {
         playSound('tick');
       }
 
-      // אם הזמן נגמר, המשחק נכנס אוטומטית לסבב נעילה של 10 שניות
+      // אם הזמן נגמר, המשחק נכנס אוטומטית לסבב נעילה של 20 שניות
       if (remaining === 0) {
         clearInterval(interval);
         triggerStopSequence("הטיימר");
@@ -250,10 +250,10 @@ function App() {
     return () => clearInterval(interval);
   }, [room, room?.stopInitiated, soundEnabled]);
 
-  // 4. ניהול טיימר נעילה של 10 שניות מרגע לחיצת "עצור!"
+  // 4. ניהול טיימר נעילה של 20 שניות מרגע לחיצת "עצור!"
   useEffect(() => {
     if (!room || room.status !== 'PLAYING' || !room.stopInitiated) {
-      setStopTimeLeft(10);
+      setStopTimeLeft(20);
       return;
     }
 
@@ -261,7 +261,7 @@ function App() {
       const now = Date.now();
       const startedAt = room.stopTimerStartedAt || now;
       const elapsed = now - startedAt;
-      const remaining = Math.max(0, 10 - Math.floor(elapsed / 1000));
+      const remaining = Math.max(0, 20 - Math.floor(elapsed / 1000));
 
       setStopTimeLeft(remaining);
 
